@@ -18,9 +18,6 @@ const FTP_SECURE = process.env.FTP_SECURE !== 'false';
 const FTP_REMOTE_DIR = process.env.FTP_REMOTE_DIR || '/images';
 const DRY_RUN = process.env.DRY_RUN === 'true';
 
-console.log('API_KEY:', JSON.stringify(API_KEY));
-console.log('FTP_PORT utilisé:', FTP_PORT);
-
 const TMP_DIR = path.join(__dirname, 'tmp');
 if (!fs.existsSync(TMP_DIR)) fs.mkdirSync(TMP_DIR);
 
