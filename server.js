@@ -16,7 +16,6 @@ const FTP_USER = process.env.FTP_USER;
 const FTP_PASS = process.env.FTP_PASS;
 const FTP_SECURE = process.env.FTP_SECURE !== 'false';
 const FTP_REMOTE_DIR = process.env.FTP_REMOTE_DIR || '/images';
-const DRY_RUN = process.env.DRY_RUN === 'true';
 
 const TMP_DIR = path.join(__dirname, 'tmp');
 if (!fs.existsSync(TMP_DIR)) fs.mkdirSync(TMP_DIR);
@@ -26,8 +25,7 @@ const upload = multer({
   limits: { fileSize: 15 * 1024 * 1024 },
   fileFilter: (req, file, cb) => {
     const allowed = ['image/jpeg', 'image/png', 'image/webp', 'image/heic'];
-    if (allowed.includes(file.mimetype)) cb(null, true);
-    else cb(new Error('Type de fichier non autorisé'));
+    cb(null, allowed.includes(file.mimetype));
   }
 });
 
@@ -35,30 +33,18 @@ app.use(cors());
 app.use(express.json());
 
 function checkApiKey(req, res, next) {
-  const key = req.header('x-api-key');
-  if (!key || key !== API_KEY) {
-    return res.status(401).json({ error: 'Non autorisé' });
-  }
+  if (req.header('x-api-key') !== API_KEY) return res.sendStatus(401);
   next();
 }
 
 app.post('/api/upload-image', checkApiKey, upload.single('image'), async (req, res) => {
-  if (!req.file) {
-    return res.status(400).json({ error: 'Aucun fichier reçu' });
-  }
+  if (!req.file) return res.sendStatus(400);
 
   const localPath = req.file.path;
   const remoteName = `${Date.now()}-${req.file.originalname.replace(/[^a-zA-Z0-9.\-_]/g, '_')}`;
   const remotePath = `${FTP_REMOTE_DIR}/${remoteName}`;
 
-  if (DRY_RUN) {
-    console.log(`[DRY_RUN] Aurait uploadé "${remoteName}" vers ${remotePath}`);
-    fs.unlink(localPath, () => {});
-    return res.json({ success: true, filename: remoteName, dryRun: true });
-  }
-
   const client = new ftp.Client();
-  client.ftp.verbose = true;
 
   try {
     await client.access({
@@ -68,23 +54,14 @@ app.post('/api/upload-image', checkApiKey, upload.single('image'), async (req, r
       password: FTP_PASS,
       secure: FTP_SECURE
     });
-
     await client.uploadFrom(localPath, remotePath);
-
     res.json({ success: true, filename: remoteName });
   } catch (err) {
-    console.error('Erreur upload FTP:', err.message);
-    res.status(500).json({ error: 'Échec de l\'upload vers le serveur' });
+    res.sendStatus(500);
   } finally {
     client.close();
     fs.unlink(localPath, () => {});
   }
 });
 
-app.get('/health', (req, res) => {
-  res.json({ status: 'ok' });
-});
-
-app.listen(PORT, () => {
-  console.log(`APIFTP démarrée sur le port ${PORT}`);
-});
+app.listen(PORT);
