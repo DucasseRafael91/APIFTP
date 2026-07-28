@@ -9,21 +9,24 @@ const cors = require('cors');
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// --- Config ---
-const API_KEY = process.env.API_KEY;                 
+const API_KEY = process.env.API_KEY;
 const FTP_HOST = process.env.FTP_HOST;
+const FTP_PORT = process.env.FTP_PORT ? parseInt(process.env.FTP_PORT, 10) : 21;
 const FTP_USER = process.env.FTP_USER;
 const FTP_PASS = process.env.FTP_PASS;
-const FTP_SECURE = process.env.FTP_SECURE !== 'false'; 
+const FTP_SECURE = process.env.FTP_SECURE !== 'false';
 const FTP_REMOTE_DIR = process.env.FTP_REMOTE_DIR || '/images';
+const DRY_RUN = process.env.DRY_RUN === 'true';
 
-// Dossier temporaire local pour stocker le fichier le temps de l'upload FTP
+console.log('API_KEY:', JSON.stringify(API_KEY));
+console.log('FTP_PORT utilisé:', FTP_PORT);
+
 const TMP_DIR = path.join(__dirname, 'tmp');
 if (!fs.existsSync(TMP_DIR)) fs.mkdirSync(TMP_DIR);
 
 const upload = multer({
   dest: TMP_DIR,
-  limits: { fileSize: 15 * 1024 * 1024 }, // 15 Mo max
+  limits: { fileSize: 15 * 1024 * 1024 },
   fileFilter: (req, file, cb) => {
     const allowed = ['image/jpeg', 'image/png', 'image/webp', 'image/heic'];
     if (allowed.includes(file.mimetype)) cb(null, true);
@@ -31,10 +34,9 @@ const upload = multer({
   }
 });
 
-app.use(cors()); // à restreindre si besoin (voir README)
+app.use(cors());
 app.use(express.json());
 
-// --- Middleware d'authentification simple par clé API ---
 function checkApiKey(req, res, next) {
   const key = req.header('x-api-key');
   if (!key || key !== API_KEY) {
@@ -43,22 +45,28 @@ function checkApiKey(req, res, next) {
   next();
 }
 
-// --- Route d'upload ---
 app.post('/api/upload-image', checkApiKey, upload.single('image'), async (req, res) => {
   if (!req.file) {
     return res.status(400).json({ error: 'Aucun fichier reçu' });
   }
 
-  const client = new ftp.Client();
-  client.ftp.verbose = false;
-
   const localPath = req.file.path;
   const remoteName = `${Date.now()}-${req.file.originalname.replace(/[^a-zA-Z0-9.\-_]/g, '_')}`;
   const remotePath = `${FTP_REMOTE_DIR}/${remoteName}`;
 
+  if (DRY_RUN) {
+    console.log(`[DRY_RUN] Aurait uploadé "${remoteName}" vers ${remotePath}`);
+    fs.unlink(localPath, () => {});
+    return res.json({ success: true, filename: remoteName, dryRun: true });
+  }
+
+  const client = new ftp.Client();
+  client.ftp.verbose = true;
+
   try {
     await client.access({
       host: FTP_HOST,
+      port: FTP_PORT,
       user: FTP_USER,
       password: FTP_PASS,
       secure: FTP_SECURE
@@ -66,20 +74,16 @@ app.post('/api/upload-image', checkApiKey, upload.single('image'), async (req, r
 
     await client.uploadFrom(localPath, remotePath);
 
-    res.json({
-      success: true,
-      filename: remoteName
-    });
+    res.json({ success: true, filename: remoteName });
   } catch (err) {
     console.error('Erreur upload FTP:', err.message);
     res.status(500).json({ error: 'Échec de l\'upload vers le serveur' });
   } finally {
     client.close();
-    fs.unlink(localPath, () => {}); // nettoyage du fichier temporaire
+    fs.unlink(localPath, () => {});
   }
 });
 
-// --- Route de santé (pour vérifier que l'API tourne) ---
 app.get('/health', (req, res) => {
   res.json({ status: 'ok' });
 });
