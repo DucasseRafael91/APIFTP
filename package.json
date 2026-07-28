@@ -1,0 +1,19 @@
+{
+  "name": "apiftp",
+  "version": "1.0.0",
+  "description": "API relais pour upload d'images vers un serveur FTP, sans exposer les identifiants côté client",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "basic-ftp": "^5.0.5",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.5",
+    "express": "^4.19.2",
+    "multer": "^1.4.5-lts.1"
+  }
+}
